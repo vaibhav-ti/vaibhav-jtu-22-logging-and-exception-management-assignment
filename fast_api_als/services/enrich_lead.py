@@ -12,4 +12,9 @@ what exceptions can be thrown here?
 
 
 def get_enriched_lead_json(adf_json: dict) -> dict:
-    pass
+    try:
+        # process the dict 
+    except:
+        return "Invalid argument"
+
+        
