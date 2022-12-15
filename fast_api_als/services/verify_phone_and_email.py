@@ -52,11 +52,10 @@ async def verify_phone_and_email(email: str, phone_number: str) -> bool:
 
     await asyncio.gather(
         logger.info("Calling email validation service.")
-        
         try:
             call_validation_service(email_validation_url, "email", email, data),
         except Exception as e:
-            logger.error("Error in calling email validation service.")
+            logger.error("Error in calling email_validation_service.")
             logger.info(e)
         
         logger.info("Email validation service called.")
@@ -64,7 +63,7 @@ async def verify_phone_and_email(email: str, phone_number: str) -> bool:
         try:       
             call_validation_service(phone_validation_url, "phone", phone_number, data),
         except Exception as e:
-            logger.error("Error in calling call validation service.")
+            logger.error("Error in calling call_validation_service.")
             logger.info(e)
         
         logger.info("Phone validation service called.")

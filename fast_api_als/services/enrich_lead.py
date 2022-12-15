@@ -14,7 +14,12 @@ what exceptions can be thrown here?
 def get_enriched_lead_json(adf_json: dict) -> dict:
     try:
         # process the dict 
-    except:
-        return "Invalid argument"
+        
+
+    except KeyError as ke:
+        logging.error("Key not found in adf_json", ke)
+    except ValueError as ve:
+        logging.error("Key can't take this value", ve)
+        
 
         

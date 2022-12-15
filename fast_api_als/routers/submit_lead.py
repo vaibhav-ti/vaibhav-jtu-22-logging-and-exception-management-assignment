@@ -31,8 +31,6 @@ You as a developer has to find how much time each part of code takes.
 you will get the idea about the part when you go through the code.
 """
 
-# Creating an object
-logger = logging.getLogger()
 
 
 @router.post("/submit/")
@@ -50,8 +48,12 @@ async def submit(file: Request, apikey: APIKey = Depends(get_api_key)):
 
     # check if xml was not parsable, if not return
     if not obj:
-        logger.info("xml was not parsable.")
-        provider = db_helper_session.get_api_key_author(apikey)
+        logging.info("xml was not parsable.")
+        try:
+            provider = db_helper_session.get_api_key_author(apikey)
+        except Exception as e:
+            raise HTTPException(status_code=404, detail="API key author not found.")
+
         obj = {
             'provider': {
                 'service': provider
@@ -68,12 +70,12 @@ async def submit(file: Request, apikey: APIKey = Depends(get_api_key)):
     lead_hash = calculate_lead_hash(obj)
 
     # check if adf xml is valid
-    logger.debug("checking if xml is valid.")
+    logging.debug("checking if xml is valid.")
     validation_check, validation_code, validation_message = check_validation(obj)
 
     #if not valid return
     if not validation_check:
-        logger.info("xml is not valid.")
+        logging.info("xml is not valid.")
         item, path = create_quicksight_data(obj['adf']['prospect'], lead_hash, 'REJECTED', validation_code, {})
         s3_helper_client.put_file(item, path)
         return {
@@ -83,7 +85,7 @@ async def submit(file: Request, apikey: APIKey = Depends(get_api_key)):
         }
 
     # check if vendor is available here
-    logger.debug("checking is vendor is available.")
+    logging.debug("checking is vendor is available.")
     dealer_available = True if obj['adf']['prospect'].get('vendor', None) else False
     email, phone, last_name = get_contact_details(obj)
     make = obj['adf']['prospect']['vehicle']['make']
@@ -94,21 +96,27 @@ async def submit(file: Request, apikey: APIKey = Depends(get_api_key)):
 
     # check if 3PL is making a duplicate call or it is a duplicate lead
     with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = [executor.submit(db_helper_session.check_duplicate_api_call, lead_hash,
-                                   obj['adf']['prospect']['provider']['service']),
-                   executor.submit(db_helper_session.check_duplicate_lead, email, phone, last_name, make, model),
-                   executor.submit(db_helper_session.fetch_oem_data, make, True)
-                   ]
+        try:
+            futures = [executor.submit(db_helper_session.check_duplicate_api_call, lead_hash,
+                                    obj['adf']['prospect']['provider']['service']),
+                    executor.submit(db_helper_session.check_duplicate_lead, email, phone, last_name, make, model),
+                    executor.submit(db_helper_session.fetch_oem_data, make, True)
+                    ]
+        except Exception as e:
+            logging.error(e)
+            raise Exception(e)
+
+
         for future in as_completed(futures):
             result = future.result()
             if result.get('Duplicate_Api_Call', {}).get('status', False):
-                logger.info("Duplicate api call")
+                logging.info("Duplicate api call")
                 return {
                     "status": f"Already {result['Duplicate_Api_Call']['response']}",
                     "message": "Duplicate Api Call"
                 }
             if result.get('Duplicate_Lead', False):
-                logger.info("Duplicate lead")
+                logging.info("Duplicate lead")
                 return {
                     "status": "REJECTED",
                     "code": "12_DUPLICATE",
@@ -134,16 +142,21 @@ async def submit(file: Request, apikey: APIKey = Depends(get_api_key)):
 
 
     # if dealer is not available then find nearest dealer
-    logger.debug("finding the nearest dealer")
+    logging.debug("finding the nearest dealer")
     if not dealer_available:
         lat, lon = get_customer_coordinate(obj['adf']['prospect']['customer']['contact']['address']['postalcode'])
-        nearest_vendor = db_helper_session.fetch_nearest_dealer(oem=make,
-                                                                lat=lat,
-                                                                lon=lon)
+        try:
+            nearest_vendor = db_helper_session.fetch_nearest_dealer(oem=make,
+                                                                    lat=lat,
+                                                                    lon=lon)
+        except Exception as e:
+            logging.error(e)
+            raise Exception(e)
+
         obj['adf']['prospect']['vendor'] = nearest_vendor
         dealer_available = True if nearest_vendor != {} else False
 
-    logger.info("processing the lead")
+    logging.info("processing the lead")
     # enrich the lead
     model_input = get_enriched_lead_json(obj)
 
@@ -154,7 +167,7 @@ async def submit(file: Request, apikey: APIKey = Depends(get_api_key)):
     result = score_ml_input(ml_input, make, dealer_available)
 
     # create the response
-    logger.info("creating the response")
+    logging.info("creating the response")
     response_body = {}
     if result >= oem_threshold:
         response_body["status"] = "ACCEPTED"
@@ -177,8 +190,12 @@ async def submit(file: Request, apikey: APIKey = Depends(get_api_key)):
     # insert the lead into ddb with oem & customer details
     # delegate inserts to sqs queue
     if response_body['status'] == 'ACCEPTED':
-        logger.info("status is accepted, generating the response body")
-        make_model_filter = db_helper_session.get_make_model_filter_status(make)
+        logging.info("status is accepted, generating the response body")
+        try:
+            make_model_filter = db_helper_session.get_make_model_filter_status(make)
+        except Exception as e:
+            logging.error(e)
+            raise Exception(e)
         message = {
             'put_file': {
                 'item': item,
@@ -216,7 +233,7 @@ async def submit(file: Request, apikey: APIKey = Depends(get_api_key)):
         res = sqs_helper_session.send_message(message)
 
     else:
-        logger.info("status is not accepted")
+        logging.info("status is not accepted")
         message = {
             'put_file': {
                 'item': item,
@@ -232,6 +249,6 @@ async def submit(file: Request, apikey: APIKey = Depends(get_api_key)):
     time_taken = (int(time.time() * 1000.0) - start)
 
     response_message = f"{result} Response Time : {time_taken} ms"
-    logger.info("Response body generated. Returning it.")
+    logging.info("Response body generated. Returning it.")
 
     return response_body
