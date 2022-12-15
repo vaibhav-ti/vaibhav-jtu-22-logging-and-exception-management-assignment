@@ -17,7 +17,7 @@ router = APIRouter()
 write proper logging and exception handling
 """
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 
 def get_quicksight_data(lead_uuid, item):
     """

@@ -14,7 +14,7 @@ You also trying to undderstand the execution time factor.
 """
 
 # creating a logger
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 
 async def call_validation_service(url: str, topic: str, value: str, data: dict) -> None:  # 2
     if value == '':
